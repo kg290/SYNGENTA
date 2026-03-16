@@ -1,0 +1,215 @@
+1. Text Preprocessing
+
+Functions:
+ensure_nltk_resources()
+preprocess_text()
+run_step1_preprocessing()
+
+What it does:
+tokenization
+stopword removal
+normalization
+
+Pipeline:
+
+User text
+→ tokenize
+→ remove stopwords
+→ normalized text
+
+
+2. Intent Detection (Rule + ML + LLM)
+
+Functions:
+detect_intent_rule_based()
+detect_intent_ml()
+detect_intent_llm()
+detect_intent(mode="...")
+
+Modes:
+rule   → keyword rules (fast, deterministic)
+ml     → Naive Bayes classifier (learned patterns)
+llm    → Gemini-based classification
+hybrid → rule -> ml -> llm fallback
+
+Important update:
+"joke" is removed from hardcoded rule checks.
+Joke intent is now detected by ML or LLM.
+
+Examples:
+"add 5 and 10" + mode=rule   → math
+"tell me a joke" + mode=rule → unknown
+"tell me a joke" + mode=ml   → joke
+"weather in tokyo" + mode=hybrid → weather
+
+Runtime commands:
+intent-mode: rule
+intent-mode: ml
+intent-mode: llm
+intent-mode: hybrid
+detect-intent: your text
+
+Concept:
+multiple intent strategies in one NLP system
+
+
+
+3. Entity Extraction
+
+Functions:
+extract_numbers()
+extract_city()
+
+Examples:
+add 5 and 10
+→ 5, 10
+weather in tokyo
+→ tokyo
+
+Concept:
+Natural language → structured data
+
+
+
+4. Tool Execution Layer
+
+Functions:
+get_weather()
+add_numbers()
+tell_joke()
+
+Pipeline:
+intent + entities → function call
+Concept:
+NLP → action execution
+
+
+5. Full NLP Pipeline
+
+Function:
+run_step5_pipeline()
+
+Pipeline:
+User
+↓
+Intent detection
+↓
+Entity extraction
+↓
+Tool execution
+
+
+
+6. LLM Integration
+
+Functions:
+get_gemini_client()
+ask_llm()
+
+Capabilities added:
+reasoning
+answering unknown questions
+fallback responses
+
+Architecture:
+
+User → NLP pipeline → LLM fallback
+
+Concept:
+LLM as reasoning engine
+
+7. Hybrid NLP + LLM
+
+Function:
+run_step8_hybrid_pipeline()
+
+Architecture:
+
+User
+↓
+Intent detection
+↓
+LLM extracts entity
+↓
+Tool call
+
+Concept:
+
+Hybrid NLP + LLM system
+
+This is how many production systems work.
+
+8. LLM Tool Selection
+
+Functions:
+
+choose_tool_with_llm()
+execute_tool_call()
+
+Pipeline:
+
+User
+↓
+LLM selects tool
+↓
+tool execution
+↓
+result
+
+Concept:
+
+LLM decision engine
+
+This simulates OpenAI tool calling / function calling.
+
+9. AI Agent Loop
+
+Function:
+
+run_step10_agent()
+
+Architecture:
+
+User
+↓
+Preprocessing
+↓
+Intent detection
+↓
+LLM tool selection
+↓
+Tool execution
+↓
+LLM response
+
+Concept:
+
+LLM-driven agent
+
+This is similar to:
+
+LangChain agents
+
+AutoGPT
+
+CrewAI
+
+Overall Architecture You Built
+
+Your system now looks like:
+
+User
+ ↓
+Preprocessing
+ ↓
+Intent Detection
+ ↓
+Entity Extraction
+ ↓
+Tool Selection (LLM)
+ ↓
+Tool Execution
+ ↓
+LLM Final Response
+
+This is already a mini LLM agent framework.
