@@ -148,16 +148,32 @@ def _get_weather_wttr(city: str) -> str:
     """Fetch weather from wttr.in (no API key required)."""
     try:
         url = f"https://wttr.in/{requests.utils.quote(city)}?format=j1"
-        resp = requests.get(url, timeout=8)
+        resp = requests.get(url, timeout=12)
         resp.raise_for_status()
         data = resp.json()
 
-        cond      = data["current_condition"][0]
-        desc      = cond["weatherDesc"][0]["value"]
-        temp_c    = cond["temp_C"]
-        feels_c   = cond["FeelsLikeC"]
-        humidity  = cond["humidity"]
-        wind_kmph = cond["windspeedKmph"]
+        # wttr.in may return either {"current_condition": ...}
+        # or {"data": {"current_condition": ...}} depending on upstream changes.
+        payload = data.get("data", data)
+        if not isinstance(payload, dict):
+            return f"Weather data for {city} could not be retrieved (unexpected payload format)."
+
+        conditions = payload.get("current_condition")
+        if not isinstance(conditions, list) or not conditions:
+            return f"Weather data for {city} could not be retrieved (missing current conditions)."
+
+        cond = conditions[0]
+
+        desc_block = cond.get("weatherDesc", [])
+        if isinstance(desc_block, list) and desc_block and isinstance(desc_block[0], dict):
+            desc = desc_block[0].get("value", "Unknown")
+        else:
+            desc = "Unknown"
+
+        temp_c = cond.get("temp_C", "?")
+        feels_c = cond.get("FeelsLikeC", "?")
+        humidity = cond.get("humidity", "?")
+        wind_kmph = cond.get("windspeedKmph", "?")
 
         return (
             f"Weather in {city}: {desc}. "
