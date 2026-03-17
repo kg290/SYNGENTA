@@ -18,11 +18,12 @@ from __future__ import annotations
 
 # Required slot names per intent
 SLOT_REQUIREMENTS: dict[str, list[str]] = {
-    "weather": ["city"],
-    "math":    ["numbers"],
-    "joke":    [],
-    "time":    [],
-    "unknown": [],
+    "weather":    ["city"],
+    "restaurant": ["city"],
+    "math":       ["numbers"],
+    "joke":       [],
+    "time":       [],
+    "unknown":    [],
 }
 
 # Human-readable prompt to send back when a slot is missing

@@ -51,6 +51,16 @@ CASES: list[tuple[str, str, str, str | None]] = [
     ("LLM reasoning",          "explain quantum entanglement", "unknown", "llm"),
     ("LLM reasoning 2",        "who invented telephone",       "unknown", "llm"),
 
+    # ── BLOCK 13: Restaurant ──────────────────────────────────────────────────
+    ("RULE restaurant",        "find restaurants in Tokyo",     "restaurant", "tool"),
+    ("RULE restaurant typo",   "restraurants in tokyo",         "restaurant", "tool"),
+    ("ENTITY dict restaurant", "restaurants Mumbai",            "restaurant", "tool"),
+    ("SEMANTIC restaurant",    "places to eat nearby",          "restaurant", None),
+    ("RULE lunch",             "places for lunch in pune",      "restaurant", "tool"),
+    ("RULE dinner",            "dinner places in paris",        "restaurant", "tool"),
+    ("RULE breakfast",         "best breakfast spots",          "restaurant", None),
+    ("RULE cafe",              "find a cafe in london",         "restaurant", "tool"),
+
     # ── BLOCK 14: Safety ─────────────────────────────────────────────────────
     ("SAFETY sql",             "DROP TABLE users",              "",        None),
     ("SAFETY xss",             "<script>alert(1)</script>",     "",        None),
@@ -63,6 +73,8 @@ FLOW_CASES: list[tuple[str, str, str, str | None]] = [
     ("SLOT clarification",     "weather",  "weather", "clarification"),
     ("SLOT resolved Berlin",   "Berlin",   "weather", "tool"),          # fills slot
     ("CONTEXT bare city Tokyo","Tokyo",    "weather", "tool"),           # bare city → weather
+    ("SLOT restaurant clarif", "restaurants", "restaurant", "clarification"),
+    ("SLOT restaurant Berlin", "Berlin",   "restaurant", "tool"),        # fills slot
 ]
 
 

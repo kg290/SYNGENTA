@@ -94,8 +94,8 @@ class DialogueContext:
         1. If the previous turn left unresolved slots AND the current
            intent matches the previous intent, carry over any values
            from the previous entities that are still missing now.
-        2. Always carry the city across consecutive weather queries so
-           "weather?" after "weather in Tokyo" still works.
+        2. Always carry the city across consecutive weather or restaurant
+           queries so "weather?" after "weather in Tokyo" still works.
         3. If the current input contains no recognised entities but we
            are awaiting a city answer, treat the entire (cleaned) input
            as a possible city reply.
@@ -115,9 +115,10 @@ class DialogueContext:
                 if slot not in merged and slot in self.last_entities:
                     merged[slot] = self.last_entities[slot]
 
-        # Rule 2 – sticky city for weather
+        # Rule 2 – sticky city for repeated weather/restaurant intent
         if (
-            current_intent == "weather"
+            current_intent in ("weather", "restaurant")
+            and current_intent == self.last_intent
             and "city" not in merged
             and "city" in self.last_entities
         ):

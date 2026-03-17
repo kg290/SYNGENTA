@@ -47,7 +47,7 @@ from DAY2.routing import route
 from DAY2.safety import sanitize_input, validate_input
 from DAY2.semantic import rewrite_query, semantic_intent_match
 from DAY2.slots import check_slots, clarification_prompt
-from DAY2.tools import execute_tool
+from DAY2.tools import execute_tool, get_tool_name_for_intent
 
 
 @dataclass
@@ -93,8 +93,13 @@ def run_pipeline(
     # ── Step 12: Safety ──────────────────────────────────────────────────────
     safe, reason = validate_input(user_input)
     if not safe:
-        response = generate_response("error", f"I cannot process that request: {reason}")
-        return PipelineResult(response=response)
+        response = generate_response(
+            "error",
+            f"I cannot process that request: {reason}",
+            reasoning={"intent": "unknown", "route_taken": "blocked"},
+        )
+        context.update(user_input, "unknown", {}, response)
+        return PipelineResult(response=response, intent="unknown", route_taken="blocked")
 
     clean_input = sanitize_input(user_input)
 
@@ -113,26 +118,47 @@ def run_pipeline(
             "thx": "You're welcome!", "ty": "You're welcome!", "cheers": "You're welcome!",
             "thankyou": "You're welcome!",
         }
-        response = _greet_map.get(
+        raw_response = _greet_map.get(
             normalized,
-            "Hello! Ask me about the weather, maths, a joke, or the current time."
+            "Hello! Ask me about the weather, restaurants, maths, a joke, or the current time."
+        )
+        response = generate_response(
+            "shortcut",
+            raw_response,
+            reasoning={"intent": "unknown", "route_taken": "shortcut"},
         )
         context.update(user_input, "unknown", {}, response)
-        return PipelineResult(response=response, route_taken="shortcut")
+        return PipelineResult(
+            response=response,
+            intent="unknown",
+            route_taken="shortcut",
+            preprocessed=preprocessed,
+        )
 
     # ── Identity question shortcut ──────────────────────────────────────────
     # Describe the bot’s own capabilities without delegating to Gemini.
     if is_identity_question(normalized):
-        response = (
+        raw_response = (
             "I am an NLP + LLM assistant. Here is what I can do:\n"
-            "  \u2022 Weather  \u2013 e.g. 'weather in Tokyo'\n"
-            "  \u2022 Maths    \u2013 e.g. 'add 5 and 10'\n"
-            "  \u2022 Jokes    \u2013 e.g. 'tell me a joke'\n"
-            "  \u2022 Time     \u2013 e.g. 'what time is it'\n"
+            "  \u2022 Weather     \u2013 e.g. 'weather in Tokyo'\n"
+            "  \u2022 Restaurants \u2013 e.g. 'find restaurants in Paris'\n"
+            "  \u2022 Maths       \u2013 e.g. 'add 5 and 10'\n"
+            "  \u2022 Jokes       \u2013 e.g. 'tell me a joke'\n"
+            "  \u2022 Time        \u2013 e.g. 'what time is it'\n"
             "  \u2022 General questions \u2013 I will reason and answer."
         )
+        response = generate_response(
+            "shortcut",
+            raw_response,
+            reasoning={"intent": "unknown", "route_taken": "shortcut"},
+        )
         context.update(user_input, "unknown", {}, response)
-        return PipelineResult(response=response, route_taken="shortcut")
+        return PipelineResult(
+            response=response,
+            intent="unknown",
+            route_taken="shortcut",
+            preprocessed=preprocessed,
+        )
 
     # ── Bare number guard ─────────────────────────────────────────────────────
     # A standalone number has no operator or second operand, so it cannot
@@ -140,9 +166,18 @@ def run_pipeline(
     # helpful than trying to split its digits into two numbers.
     import re as _re_inline
     if _re_inline.match(r"^-?\d+(\.\d+)?$", normalized.strip()):
-        response = "I need more context. For maths try: 'add 5 and 10' or 'sum 3 and 7'."
+        response = generate_response(
+            "shortcut",
+            "I need more context. For maths try: 'add 5 and 10' or 'sum 3 and 7'.",
+            reasoning={"intent": "unknown", "route_taken": "shortcut"},
+        )
         context.update(user_input, "unknown", {}, response)
-        return PipelineResult(response=response, route_taken="shortcut")
+        return PipelineResult(
+            response=response,
+            intent="unknown",
+            route_taken="shortcut",
+            preprocessed=preprocessed,
+        )
 
     # ── Step 7: Semantic understanding – query rewriting ─────────────────────
     # Expand ambiguous short queries before intent detection.
@@ -173,10 +208,10 @@ def run_pipeline(
     entities = context.resolve_from_context(entities, intent)
 
     # ── Context city inference ─────────────────────────────────────────────────
-    # If the user types a bare city name (intent=unknown) after a weather turn,
-    # treat it as a new weather request for that city.
-    if intent == "unknown" and context.last_intent == "weather" and "city" in entities:
-        intent = "weather"
+    # If the user types a bare city name (intent=unknown) after a weather or
+    # restaurant turn, treat it as a new request of the same type for that city.
+    if intent == "unknown" and context.last_intent in ("weather", "restaurant") and "city" in entities:
+        intent = context.last_intent
 
     # ── Step 6: Slot checking ──────────────────────────────────────────────────
     slots_ok, missing = check_slots(intent, entities)
@@ -185,12 +220,15 @@ def run_pipeline(
     decision = route(intent, slots_ok)
 
     # ── Step 11 / 10 / clarification: Execute ──────────────────────────────────
+    tool_called = ""
+
     if not slots_ok and missing:
         # Ask the user for the missing information
         raw_response = clarification_prompt(missing)
         route_taken = "clarification"
 
     elif decision == "tool":
+        tool_called = get_tool_name_for_intent(intent) or ""
         tool_result, tool_err = execute_tool(intent, entities)
         if tool_result:
             raw_response = tool_result
@@ -206,7 +244,16 @@ def run_pipeline(
         route_taken = "llm"
 
     # ── Step 13: Response generation ───────────────────────────────────────────
-    response = generate_response(route_taken, raw_response)
+    response = generate_response(
+        route_taken,
+        raw_response,
+        reasoning={
+            "intent": intent,
+            "route_taken": route_taken,
+            "tool_called": tool_called,
+            "missing_slots": missing,
+        },
+    )
 
     # Persist this turn into the dialogue context
     context.update(

@@ -15,7 +15,7 @@ system and the LLM client.
 """
 
 # Intents that have a corresponding tool implementation
-_TOOL_INTENTS: frozenset[str] = frozenset({"weather", "math", "joke", "time"})
+_TOOL_INTENTS: frozenset[str] = frozenset({"weather", "restaurant", "math", "joke", "time"})
 
 
 def route(intent: str, slots_satisfied: bool) -> str:

@@ -6,6 +6,8 @@ Defines the available tools, validates their arguments, and executes them.
 Tools
 -----
 get_weather(city)     – return a weather description for the city
+                        (OpenWeatherMap if WEATHER_API_KEY is set, else wttr.in)
+get_restaurants(city) – find nearby restaurants using Geoapify
 add_numbers(a, b)     – add two numbers and return a formatted result
 tell_joke()           – generate and return a fresh joke via the LLM
 get_time()            – return the current local time
@@ -39,16 +41,22 @@ _MAX_JOKE_HISTORY = 10
 # Allowed tools (whitelist)
 # ---------------------------------------------------------------------------
 ALLOWED_TOOLS: frozenset[str] = frozenset(
-    {"get_weather", "add_numbers", "tell_joke", "get_time"}
+    {"get_weather", "add_numbers", "tell_joke", "get_time", "get_restaurants"}
 )
 
 # Map intent labels → tool names
 _INTENT_TO_TOOL: dict[str, str] = {
-    "weather": "get_weather",
-    "math":    "add_numbers",
-    "joke":    "tell_joke",
-    "time":    "get_time",
+    "weather":    "get_weather",
+    "restaurant": "get_restaurants",
+    "math":       "add_numbers",
+    "joke":       "tell_joke",
+    "time":       "get_time",
 }
+
+
+def get_tool_name_for_intent(intent: str) -> str | None:
+    """Return the tool name mapped to an intent, if any."""
+    return _INTENT_TO_TOOL.get(intent)
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +74,11 @@ def _validate_args(tool_name: str, entities: dict) -> tuple[bool, str]:
         city = entities.get("city", "")
         if not city or not str(city).strip():
             return False, "City is required for weather lookup."
+
+    elif tool_name == "get_restaurants":
+        city = entities.get("city", "")
+        if not city or not str(city).strip():
+            return False, "City is required for restaurant search."
 
     elif tool_name == "add_numbers":
         nums = entities.get("numbers", [])
@@ -86,23 +99,37 @@ def _validate_args(tool_name: str, entities: dict) -> tuple[bool, str]:
 
 def get_weather(city: str) -> str:
     """
-    Fetch real-time weather for `city` using the wttr.in public API.
+    Fetch real-time weather for `city`.
 
-    No API key required.  Falls back to a descriptive error string so
-    the pipeline can degrade gracefully if the network is unavailable.
+    Uses OpenWeatherMap when the WEATHER_API_KEY environment variable is set
+    (free API key at openweathermap.org).  Falls back to the keyless wttr.in
+    public API so the feature works out of the box without any configuration.
     """
+    owm_key = os.environ.get("WEATHER_API_KEY", "")
+    if owm_key:
+        return _get_weather_owm(city, owm_key)
+    return _get_weather_wttr(city)
+
+
+def _get_weather_owm(city: str, api_key: str) -> str:
+    """Fetch weather from the OpenWeatherMap API (requires API key)."""
     try:
-        url = f"https://wttr.in/{requests.utils.quote(city)}?format=j1"
+        url = (
+            f"https://api.openweathermap.org/data/2.5/weather"
+            f"?q={requests.utils.quote(city)}&appid={api_key}&units=metric"
+        )
         resp = requests.get(url, timeout=8)
-        resp.raise_for_status()
         data = resp.json()
 
-        cond = data["current_condition"][0]
-        desc        = cond["weatherDesc"][0]["value"]
-        temp_c      = cond["temp_C"]
-        feels_c     = cond["FeelsLikeC"]
-        humidity    = cond["humidity"]
-        wind_kmph   = cond["windspeedKmph"]
+        if data.get("cod") != 200:
+            msg = data.get("message", "unknown error")
+            return f"Weather data for {city} could not be retrieved ({msg})."
+
+        temp_c    = data["main"]["temp"]
+        feels_c   = data["main"]["feels_like"]
+        humidity  = data["main"]["humidity"]
+        wind_kmph = round(data["wind"]["speed"] * 3.6, 1)
+        desc      = data["weather"][0]["description"]
 
         return (
             f"Weather in {city}: {desc}. "
@@ -110,7 +137,35 @@ def get_weather(city: str) -> str:
             f"humidity {humidity}%, wind {wind_kmph} km/h."
         )
     except requests.exceptions.ConnectionError:
-        return f"Could not reach the weather service. Check your internet connection."
+        return "Could not reach the weather service. Check your internet connection."
+    except requests.exceptions.Timeout:
+        return f"Weather request for {city} timed out. Please try again."
+    except (KeyError, ValueError, requests.exceptions.RequestException) as exc:
+        return f"Weather data for {city} could not be retrieved ({exc})."
+
+
+def _get_weather_wttr(city: str) -> str:
+    """Fetch weather from wttr.in (no API key required)."""
+    try:
+        url = f"https://wttr.in/{requests.utils.quote(city)}?format=j1"
+        resp = requests.get(url, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+
+        cond      = data["current_condition"][0]
+        desc      = cond["weatherDesc"][0]["value"]
+        temp_c    = cond["temp_C"]
+        feels_c   = cond["FeelsLikeC"]
+        humidity  = cond["humidity"]
+        wind_kmph = cond["windspeedKmph"]
+
+        return (
+            f"Weather in {city}: {desc}. "
+            f"Temperature {temp_c}°C (feels like {feels_c}°C), "
+            f"humidity {humidity}%, wind {wind_kmph} km/h."
+        )
+    except requests.exceptions.ConnectionError:
+        return "Could not reach the weather service. Check your internet connection."
     except requests.exceptions.Timeout:
         return f"Weather request for {city} timed out. Please try again."
     except (KeyError, ValueError, requests.exceptions.RequestException) as exc:
@@ -172,6 +227,66 @@ def get_time() -> str:
     return f"Current time is {datetime.now().strftime('%H:%M:%S')}."
 
 
+def get_restaurants(city: str) -> str:
+    """
+    Find nearby restaurants using the Geoapify Places API.
+
+    Two-step process:
+    1. Geocode the city name to lat/lon coordinates.
+    2. Search for restaurants within a 2 km radius.
+
+    Returns a formatted list of up to 5 restaurant names.
+    """
+    api_key = os.environ.get("GEOAPIFY_KEY", "")
+    if not api_key:
+        return "Restaurant search is not configured (missing GEOAPIFY_KEY)."
+
+    try:
+        # Step 1: Geocode city → lat/lon
+        geo_url = (
+            f"https://api.geoapify.com/v1/geocode/search"
+            f"?text={requests.utils.quote(city)}&apiKey={api_key}"
+        )
+        geo_resp = requests.get(geo_url, timeout=8)
+        geo_resp.raise_for_status()
+        geo_data = geo_resp.json()
+
+        if not geo_data.get("features"):
+            return f"Could not find location '{city}'. Please check the city name."
+
+        props = geo_data["features"][0]["properties"]
+        lat = props["lat"]
+        lon = props["lon"]
+
+        # Step 2: Search for restaurants near the coordinates
+        place_url = (
+            f"https://api.geoapify.com/v2/places"
+            f"?categories=catering.restaurant"
+            f"&filter=circle:{lon},{lat},2000"
+            f"&limit=5&apiKey={api_key}"
+        )
+        place_resp = requests.get(place_url, timeout=8)
+        place_resp.raise_for_status()
+        place_data = place_resp.json()
+
+        names = [
+            feat["properties"].get("name", "Unnamed")
+            for feat in place_data.get("features", [])
+            if feat["properties"].get("name")
+        ]
+
+        if names:
+            return f"Top restaurants in {city}: {', '.join(names)}."
+        return f"No restaurants found near {city}."
+
+    except requests.exceptions.ConnectionError:
+        return "Could not reach the restaurant service. Check your internet connection."
+    except requests.exceptions.Timeout:
+        return f"Restaurant search for {city} timed out. Please try again."
+    except (KeyError, ValueError, requests.exceptions.RequestException) as exc:
+        return f"Restaurant data for {city} could not be retrieved ({exc})."
+
+
 # ---------------------------------------------------------------------------
 # Unified execution entry point
 # ---------------------------------------------------------------------------
@@ -206,6 +321,10 @@ def execute_tool(intent: str, entities: dict) -> tuple[str | None, str]:
     if tool_name == "get_weather":
         city = str(entities["city"]).strip().title()
         return get_weather(city), ""
+
+    if tool_name == "get_restaurants":
+        city = str(entities["city"]).strip().title()
+        return get_restaurants(city), ""
 
     if tool_name == "add_numbers":
         nums = entities["numbers"]

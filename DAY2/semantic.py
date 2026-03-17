@@ -119,6 +119,18 @@ INTENT_EXEMPLARS: dict[str, list[str]] = {
         "clock reading",
         "what hour",
     ],
+    "restaurant": [
+        "find restaurants nearby",
+        "places to eat",
+        "food near me",
+        "best dining options",
+        "where to eat",
+        "lunch places nearby",
+        "dinner options in the city",
+        "breakfast spots",
+        "places for lunch",
+        "best cafes around",
+    ],
 }
 
 
@@ -253,6 +265,8 @@ def rewrite_query(text: str) -> str:
         "add", "sum", "plus", "total", "calculate", "math",
         "joke", "funny", "laugh", "humor", "humour",
         "time", "clock", "hour",
+        "restaurant", "restaurants", "food", "eat", "dining", "cuisine",
+        "lunch", "dinner", "breakfast", "brunch", "cafe",
     }
     # Also rewrite bare city names (single capitalised word that isn't social)
     # and single domain words like "joke", "time"
@@ -264,7 +278,7 @@ def rewrite_query(text: str) -> str:
 
     prompt = (
         f"The user typed a short query: '{text}'\n"
-        "It appears to be an incomplete domain query (weather / math / joke / time).\n"
+        "It appears to be an incomplete domain query (weather / restaurant / math / joke / time).\n"
         "Rewrite it as one clear, complete question.\n"
         "If it is a greeting or unrelated to those topics, return it unchanged.\n"
         "Return only the rewritten question, nothing else."

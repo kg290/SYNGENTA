@@ -22,8 +22,20 @@ import re
 import nltk
 from nltk.classify import NaiveBayesClassifier
 
-INTENT_LABELS: set[str] = {"weather", "math", "joke", "time", "unknown"}
+INTENT_LABELS: set[str] = {"weather", "math", "joke", "time", "restaurant", "unknown"}
 INTENT_MODES: set[str] = {"rule", "ml", "llm", "hybrid"}
+
+# Common misspellings that should still map to restaurant intent.
+_INTENT_TYPO_MAP: dict[str, str] = {
+    "restraurant": "restaurant",
+    "restraurants": "restaurants",
+    "restraunt": "restaurant",
+    "restraunts": "restaurants",
+    "restuarant": "restaurant",
+    "restuarants": "restaurants",
+    "restarant": "restaurant",
+    "restarants": "restaurants",
+}
 
 # Minimum probability an ML prediction must exceed to be accepted.
 ML_CONFIDENCE_THRESHOLD: float = 0.45
@@ -74,6 +86,23 @@ TRAINING_DATA: list[tuple[str, str]] = [
     ("what is chlorophyll", "unknown"),
     ("tell me about history", "unknown"),
     ("how does photosynthesis work", "unknown"),
+    # restaurant
+    ("find restaurants near me", "restaurant"),
+    ("food near me", "restaurant"),
+    ("places to eat", "restaurant"),
+    ("best restaurants in tokyo", "restaurant"),
+    ("where can I eat", "restaurant"),
+    ("restaurants in delhi", "restaurant"),
+    ("dining options nearby", "restaurant"),
+    ("recommend a restaurant", "restaurant"),
+    ("places for lunch in pune", "restaurant"),
+    ("lunch near me", "restaurant"),
+    ("dinner places in paris", "restaurant"),
+    ("best breakfast spots", "restaurant"),
+    ("brunch options near me", "restaurant"),
+    ("find a cafe in london", "restaurant"),
+    ("where to get dinner", "restaurant"),
+    ("lunch spots in bangalore", "restaurant"),
 ]
 
 _classifier: NaiveBayesClassifier | None = None
@@ -83,8 +112,15 @@ _classifier: NaiveBayesClassifier | None = None
 # Feature extraction shared by training and inference
 # ---------------------------------------------------------------------------
 
+def _normalize_intent_text(text: str) -> str:
+    """Normalise text and repair common domain typos for intent detection."""
+    normalized = text.lower()
+    for wrong, right in _INTENT_TYPO_MAP.items():
+        normalized = re.sub(rf"\b{re.escape(wrong)}\b", right, normalized)
+    return normalized
+
 def _features(text: str) -> dict:
-    text = text.lower()
+    text = _normalize_intent_text(text)
     tokens = re.findall(r"[a-z']+", text)
     feats: dict = {f"has({t})": True for t in tokens}
     feats["has_number"] = bool(re.search(r"\d", text))
@@ -112,9 +148,19 @@ def detect_intent_rule(text: str) -> str:
     Joke intent is intentionally excluded — it requires ML/LLM to avoid
     false positives on words like "funny" appearing in other contexts.
     """
-    t = text.lower()
+    t = _normalize_intent_text(text)
     if re.search(r"\bweather\b|\brain\b|\bforecast\b|\btemperature\b|\bclimate\b|\bsunny\b|\bsnow\b", t):
         return "weather"
+    if re.search(
+        r"\brestaurant\b|\brestaurants\b|\bdining\b|\bcuisine\b"
+        r"|\blunch\b|\bdinner\b|\bbreakfast\b|\bbrunch\b"
+        r"|\bcafe\b|\bcafes\b|\beatery\b|\beateries\b"
+        r"|\bplaces?\s+(?:to|for)\s+(?:eat|dine|lunch|dinner|breakfast)\b"
+        r"|\bfood\s+(?:near|in|at|around)\b"
+        r"|\bwhere\s+(?:can\s+i|to|should\s+i)\s+eat\b",
+        t,
+    ):
+        return "restaurant"
     if re.search(r"\badd\b|\bsum\b|\bplus\b|\btotal\b|\btimes\b|\bmultiply\b|\bdivide\b|\bminus\b|\bsubtract\b|\bcalculate\b", t):
         return "math"
     if re.search(r"\btime\b|\bclock\b|\bhour\b|\bminute\b", t):
