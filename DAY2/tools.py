@@ -24,6 +24,7 @@ arguments produce a descriptive error string rather than a crash.
 from __future__ import annotations
 
 import os
+import urllib.parse
 from datetime import datetime
 
 import requests
@@ -46,11 +47,11 @@ ALLOWED_TOOLS: frozenset[str] = frozenset(
 
 # Map intent labels → tool names
 _INTENT_TO_TOOL: dict[str, str] = {
-    "weather":    "get_weather",
+    "weather": "get_weather",
     "restaurant": "get_restaurants",
-    "math":       "add_numbers",
-    "joke":       "tell_joke",
-    "time":       "get_time",
+    "math": "add_numbers",
+    "joke": "tell_joke",
+    "time": "get_time",
 }
 
 
@@ -62,6 +63,7 @@ def get_tool_name_for_intent(intent: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Argument validation
 # ---------------------------------------------------------------------------
+
 
 def _validate_args(tool_name: str, entities: dict) -> tuple[bool, str]:
     """
@@ -97,6 +99,7 @@ def _validate_args(tool_name: str, entities: dict) -> tuple[bool, str]:
 # Individual tool implementations
 # ---------------------------------------------------------------------------
 
+
 def get_weather(city: str) -> str:
     """
     Fetch real-time weather for `city`.
@@ -116,7 +119,7 @@ def _get_weather_owm(city: str, api_key: str) -> str:
     try:
         url = (
             f"https://api.openweathermap.org/data/2.5/weather"
-            f"?q={requests.utils.quote(city)}&appid={api_key}&units=metric"
+            f"?q={urllib.parse.quote(city)}&appid={api_key}&units=metric"
         )
         resp = requests.get(url, timeout=8)
         data = resp.json()
@@ -125,11 +128,11 @@ def _get_weather_owm(city: str, api_key: str) -> str:
             msg = data.get("message", "unknown error")
             return f"Weather data for {city} could not be retrieved ({msg})."
 
-        temp_c    = data["main"]["temp"]
-        feels_c   = data["main"]["feels_like"]
-        humidity  = data["main"]["humidity"]
+        temp_c = data["main"]["temp"]
+        feels_c = data["main"]["feels_like"]
+        humidity = data["main"]["humidity"]
         wind_kmph = round(data["wind"]["speed"] * 3.6, 1)
-        desc      = data["weather"][0]["description"]
+        desc = data["weather"][0]["description"]
 
         return (
             f"Weather in {city}: {desc}. "
@@ -147,7 +150,7 @@ def _get_weather_owm(city: str, api_key: str) -> str:
 def _get_weather_wttr(city: str) -> str:
     """Fetch weather from wttr.in (no API key required)."""
     try:
-        url = f"https://wttr.in/{requests.utils.quote(city)}?format=j1"
+        url = f"https://wttr.in/{urllib.parse.quote(city)}?format=j1"
         resp = requests.get(url, timeout=12)
         resp.raise_for_status()
         data = resp.json()
@@ -165,7 +168,11 @@ def _get_weather_wttr(city: str) -> str:
         cond = conditions[0]
 
         desc_block = cond.get("weatherDesc", [])
-        if isinstance(desc_block, list) and desc_block and isinstance(desc_block[0], dict):
+        if (
+            isinstance(desc_block, list)
+            and desc_block
+            and isinstance(desc_block[0], dict)
+        ):
             desc = desc_block[0].get("value", "Unknown")
         else:
             desc = "Unknown"
@@ -221,7 +228,7 @@ def tell_joke() -> str:
         f"{history_block}"
         "Generate one short, original joke.\n"
         "Preferred formats: 'Why did...', 'What do you call...', "
-        "'How many X does it take...', 'What\'s the difference between...'\n"
+        "'How many X does it take...', 'What's the difference between...'\n"
         "Rules:\n"
         "- Maximum two lines (setup + punchline).\n"
         "- Do NOT start with 'I tried', 'I told', 'I explained', or 'I asked'.\n"
@@ -235,7 +242,9 @@ def tell_joke() -> str:
         if len(_joke_history) > _MAX_JOKE_HISTORY:
             _joke_history.pop(0)
         return response
-    return "Why did the scarecrow win an award? Because he was outstanding in his field."
+    return (
+        "Why did the scarecrow win an award? Because he was outstanding in his field."
+    )
 
 
 def get_time() -> str:
@@ -261,7 +270,7 @@ def get_restaurants(city: str) -> str:
         # Step 1: Geocode city → lat/lon
         geo_url = (
             f"https://api.geoapify.com/v1/geocode/search"
-            f"?text={requests.utils.quote(city)}&apiKey={api_key}"
+            f"?text={urllib.parse.quote(city)}&apiKey={api_key}"
         )
         geo_resp = requests.get(geo_url, timeout=8)
         geo_resp.raise_for_status()
@@ -306,6 +315,7 @@ def get_restaurants(city: str) -> str:
 # ---------------------------------------------------------------------------
 # Unified execution entry point
 # ---------------------------------------------------------------------------
+
 
 def execute_tool(intent: str, entities: dict) -> tuple[str | None, str]:
     """

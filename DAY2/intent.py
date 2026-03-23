@@ -18,6 +18,7 @@ weather, math, joke, time, unknown
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import nltk
 from nltk.classify import NaiveBayesClassifier
@@ -112,6 +113,7 @@ _classifier: NaiveBayesClassifier | None = None
 # Feature extraction shared by training and inference
 # ---------------------------------------------------------------------------
 
+
 def _normalize_intent_text(text: str) -> str:
     """Normalise text and repair common domain typos for intent detection."""
     normalized = text.lower()
@@ -119,10 +121,11 @@ def _normalize_intent_text(text: str) -> str:
         normalized = re.sub(rf"\b{re.escape(wrong)}\b", right, normalized)
     return normalized
 
-def _features(text: str) -> dict:
+
+def _features(text: str) -> dict[str, Any]:
     text = _normalize_intent_text(text)
     tokens = re.findall(r"[a-z']+", text)
-    feats: dict = {f"has({t})": True for t in tokens}
+    feats: dict[str, Any] = {f"has({t})": True for t in tokens}
     feats["has_number"] = bool(re.search(r"\d", text))
     feats["token_count"] = len(tokens)
     return feats
@@ -140,6 +143,7 @@ def _get_classifier() -> NaiveBayesClassifier:
 # Individual detection strategies
 # ---------------------------------------------------------------------------
 
+
 def detect_intent_rule(text: str) -> str:
     """
     Rule-based intent detection using keyword regex.
@@ -149,7 +153,10 @@ def detect_intent_rule(text: str) -> str:
     false positives on words like "funny" appearing in other contexts.
     """
     t = _normalize_intent_text(text)
-    if re.search(r"\bweather\b|\brain\b|\bforecast\b|\btemperature\b|\bclimate\b|\bsunny\b|\bsnow\b", t):
+    if re.search(
+        r"\bweather\b|\brain\b|\bforecast\b|\btemperature\b|\bclimate\b|\bsunny\b|\bsnow\b",
+        t,
+    ):
         return "weather"
     if re.search(
         r"\brestaurant\b|\brestaurants\b|\bdining\b|\bcuisine\b"
@@ -161,7 +168,10 @@ def detect_intent_rule(text: str) -> str:
         t,
     ):
         return "restaurant"
-    if re.search(r"\badd\b|\bsum\b|\bplus\b|\btotal\b|\btimes\b|\bmultiply\b|\bdivide\b|\bminus\b|\bsubtract\b|\bcalculate\b", t):
+    if re.search(
+        r"\badd\b|\bsum\b|\bplus\b|\btotal\b|\btimes\b|\bmultiply\b|\bdivide\b|\bminus\b|\bsubtract\b|\bcalculate\b",
+        t,
+    ):
         return "math"
     if re.search(r"\btime\b|\bclock\b|\bhour\b|\bminute\b", t):
         return "time"
@@ -215,6 +225,7 @@ def detect_intent_llm(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Unified entry point
 # ---------------------------------------------------------------------------
+
 
 def detect_intent(text: str, mode: str = "hybrid") -> str:
     """
